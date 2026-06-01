@@ -7,6 +7,7 @@ from ..models.knowledge import DocumentResponse, KnowledgeStats
 from ..utils.document_parser import DocumentParser
 from ..utils.embedding import encode_texts
 from ..utils.hybrid_search import HybridSearchService
+from ..utils.reranker import rerank
 
 
 class RAGService:
@@ -125,6 +126,12 @@ class RAGService:
         finally:
             await db.close()
 
-    async def search(self, query: str, domain: str = None, top_k: int = 20) -> list[dict]:
-        """混合检索：向量 + BM25 + RRF 融合"""
-        return await self.search_service.search(query, domain, top_k)
+    async def search(self, query: str, domain: str = None, top_k: int = 20, rerank_top_k: int = 5) -> list[dict]:
+        """混合检索 + Re-ranking 精排"""
+        # 混合检索
+        candidates = await self.search_service.search(query, domain, top_k)
+
+        # Re-ranking 精排
+        reranked = await rerank(query, candidates, rerank_top_k)
+
+        return reranked

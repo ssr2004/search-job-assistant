@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     llm_model: str = "qwen-turbo"
     llm_base_url: str = "https://dashscope.aliyuncs.com"
 
+    # Jina AI Re-ranking
+    jina_api_key: str = ""
+
     # 数据库
     chromadb_path: str = "./data/chromadb"
     sqlite_path: str = "./data/sqlite/app.db"

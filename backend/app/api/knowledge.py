@@ -38,7 +38,8 @@ async def get_stats() -> KnowledgeStats:
 async def search(
     query: str = Query(..., description="搜索查询"),
     domain: Optional[str] = Query(None, description="领域过滤"),
-    top_k: int = Query(20, description="返回数量")
+    top_k: int = Query(20, description="候选数量"),
+    rerank_top_k: int = Query(5, description="精排后返回数量")
 ) -> list[dict]:
-    """混合检索：向量 + BM25 + RRF 融合"""
-    return await rag_service.search(query, domain, top_k)
+    """混合检索 + Re-ranking 精排"""
+    return await rag_service.search(query, domain, top_k, rerank_top_k)
