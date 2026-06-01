@@ -9,6 +9,7 @@ from ..models.resume import (
 from ..models.eval import GapAnalysisResponse
 from ..utils.resume_parser import parse_resume, parse_jd
 from ..utils.matching import match_resume_jd
+from ..utils.llm import chat_complete
 
 
 class ResumeService:
@@ -191,9 +192,69 @@ class ResumeService:
             await db.close()
 
     async def analyze_gap(self, resume_id: int, jd_id: int) -> GapAnalysisResponse:
-        """分析技能差距 - TODO: 实现技能差距分析"""
+        """分析技能差距"""
+        # 获取简历和 JD
+        resume = await self._get_resume_parsed(resume_id)
+        jd = await self._get_jd_parsed(jd_id)
+
+        if not resume or not jd:
+            raise ValueError("简历或 JD 不存在")
+
+        # 提取技能集合
+        resume_skills = set(resume.get("skills", []))
+        required_skills = set(jd.get("hard_requirements", {}).get("skills_required", []))
+        preferred_skills = set(jd.get("hard_requirements", {}).get("skills_preferred", []))
+
+        # 计算匹配情况
+        matched_required = resume_skills & required_skills
+        missing_required = required_skills - resume_skills
+        matched_preferred = resume_skills & preferred_skills
+        missing_preferred = preferred_skills - resume_skills
+
+        # 生成学习推荐
+        recommendations = await self._generate_recommendations(missing_required, missing_preferred)
+
+        # 计算匹配率
+        required_match_rate = len(matched_required) / len(required_skills) if required_skills else 1.0
+        preferred_match_rate = len(matched_preferred) / len(preferred_skills) if preferred_skills else 1.0
+        overall_match_rate = (required_match_rate + preferred_match_rate) / 2
+
         return GapAnalysisResponse(
-            required_match_rate=0.0, preferred_match_rate=0.0, overall_match_rate=0.0,
-            matched_required=[], missing_required=[], matched_preferred=[], missing_preferred=[],
-            recommendations=[{"message": "技能差距分析待实现"}]
+            required_match_rate=round(required_match_rate, 3),
+            preferred_match_rate=round(preferred_match_rate, 3),
+            overall_match_rate=round(overall_match_rate, 3),
+            matched_required=list(matched_required),
+            missing_required=list(missing_required),
+            matched_preferred=list(matched_preferred),
+            missing_preferred=list(missing_preferred),
+            recommendations=recommendations
         )
+
+    async def _generate_recommendations(self, missing_required: set, missing_preferred: set) -> list:
+        """生成学习推荐"""
+        if not missing_required and not missing_preferred:
+            return [{"message": "恭喜！你已满足所有技能要求"}]
+
+        prompt = f"""作为职业顾问，请为以下缺失技能提供学习推荐。
+
+必须掌握的技能（缺失）：{', '.join(missing_required) if missing_required else '无'}
+加分技能（缺失）：{', '.join(missing_preferred) if missing_preferred else '无'}
+
+请为每个技能提供：
+1. 推荐学习资源（书籍/课程/文档）
+2. 预计学习时间
+3. 学习优先级（高/中/低）
+
+以JSON数组格式输出。"""
+
+        messages = [{"role": "user", "content": prompt}]
+        result = await chat_complete(messages)
+
+        try:
+            if "```json" in result:
+                result = result.split("```json")[1].split("```")[0]
+            elif "```" in result:
+                result = result.split("```")[1].split("```")[0]
+            return json.loads(result.strip())
+        except:
+            return [{"skill": s, "priority": "高"} for s in missing_required]
