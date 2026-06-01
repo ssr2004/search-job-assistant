@@ -8,6 +8,7 @@ from ..models.resume import (
 )
 from ..models.eval import GapAnalysisResponse
 from ..utils.resume_parser import parse_resume, parse_jd
+from ..utils.matching import match_resume_jd
 
 
 class ResumeService:
@@ -109,14 +110,69 @@ class ResumeService:
             await db.close()
 
     async def match(self, resume_id: int, jd_id: int) -> MatchResult:
-        """执行匹配 - TODO: 实现匹配引擎"""
-        return MatchResult(
-            id=0, resume_id=resume_id, jd_id=jd_id,
-            final_score=0.0, hard_score=0.0, skill_score=0.0,
-            exp_score=0.0, project_score=0.0,
-            details={"message": "匹配引擎待实现"},
-            created_at=""
-        )
+        """执行匹配"""
+        # 获取简历和 JD
+        resume = await self._get_resume_parsed(resume_id)
+        jd = await self._get_jd_parsed(jd_id)
+
+        if not resume or not jd:
+            raise ValueError("简历或 JD 不存在")
+
+        # 执行匹配
+        result = await match_resume_jd(resume, jd)
+
+        # 保存结果
+        db = await get_sqlite()
+        try:
+            cursor = await db.execute(
+                """INSERT INTO match_results (resume_id, jd_id, final_score, hard_score, skill_score, exp_score, project_score, details)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (resume_id, jd_id, result["final_score"],
+                 result["hard_requirements"]["score"],
+                 result["skill_match"]["score"],
+                 result["experience_match"]["score"],
+                 result["project_match"]["score"],
+                 json.dumps(result, ensure_ascii=False))
+            )
+            await db.commit()
+            match_id = cursor.lastrowid
+
+            return MatchResult(
+                id=match_id, resume_id=resume_id, jd_id=jd_id,
+                final_score=result["final_score"],
+                hard_score=result["hard_requirements"]["score"],
+                skill_score=result["skill_match"]["score"],
+                exp_score=result["experience_match"]["score"],
+                project_score=result["project_match"]["score"],
+                details=result,
+                created_at=""
+            )
+        finally:
+            await db.close()
+
+    async def _get_resume_parsed(self, resume_id: int) -> dict:
+        """获取简历解析结果"""
+        db = await get_sqlite()
+        try:
+            cursor = await db.execute("SELECT parsed_content FROM resumes WHERE id = ?", (resume_id,))
+            row = await cursor.fetchone()
+            if row and row[0]:
+                return json.loads(row[0])
+            return None
+        finally:
+            await db.close()
+
+    async def _get_jd_parsed(self, jd_id: int) -> dict:
+        """获取 JD 解析结果"""
+        db = await get_sqlite()
+        try:
+            cursor = await db.execute("SELECT parsed_content FROM job_descriptions WHERE id = ?", (jd_id,))
+            row = await cursor.fetchone()
+            if row and row[0]:
+                return json.loads(row[0])
+            return None
+        finally:
+            await db.close()
 
     async def get_match_results(self) -> list[MatchResult]:
         """获取匹配结果列表"""
