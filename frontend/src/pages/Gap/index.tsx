@@ -1,14 +1,32 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, Button, Select, message, Row, Col, Progress, List, Tag, Space } from 'antd'
 import { ThunderboltOutlined } from '@ant-design/icons'
 import { gapApi, resumeApi, jdApi } from '@/api'
-import type { GapAnalysis } from '@/types'
+import type { GapAnalysis, Resume, JobDescription } from '@/types'
 
 export default function Gap() {
   const [analysis, setAnalysis] = useState<GapAnalysis | null>(null)
   const [loading, setLoading] = useState(false)
   const [resumeId, setResumeId] = useState<number | undefined>()
   const [jdId, setJdId] = useState<number | undefined>()
+  const [resumes, setResumes] = useState<Resume[]>([])
+  const [jds, setJds] = useState<JobDescription[]>([])
+
+  useEffect(() => {
+    const fetchOptions = async () => {
+      try {
+        const [resumesRes, jdsRes] = await Promise.all([
+          resumeApi.list(),
+          jdApi.list(),
+        ])
+        setResumes(resumesRes.data)
+        setJds(jdsRes.data)
+      } catch {
+        // 忽略错误
+      }
+    }
+    fetchOptions()
+  }, [])
 
   const handleAnalyze = async () => {
     if (!resumeId || !jdId) {
@@ -32,14 +50,16 @@ export default function Gap() {
           <Select
             placeholder="选择简历"
             style={{ width: 200 }}
-            onChange={(v) => setResumeId(v)}
-            options={[]}
+            value={resumeId}
+            onChange={setResumeId}
+            options={resumes.map(r => ({ value: r.id, label: r.filename }))}
           />
           <Select
             placeholder="选择 JD"
             style={{ width: 200 }}
-            onChange={(v) => setJdId(v)}
-            options={[]}
+            value={jdId}
+            onChange={setJdId}
+            options={jds.map(j => ({ value: j.id, label: j.title }))}
           />
           <Button
             type="primary"
@@ -87,24 +107,57 @@ export default function Gap() {
             </Col>
           </Row>
 
-          <Row gutter={16}>
+          <Row gutter={16} style={{ marginBottom: 16 }}>
             <Col span={12}>
               <Card title="已掌握的必须技能">
-                {analysis.matched_required.map((skill) => (
-                  <Tag color="green" key={skill}>{skill}</Tag>
-                ))}
+                {analysis.matched_required.length > 0 ? (
+                  analysis.matched_required.map((skill) => (
+                    <Tag color="green" key={skill}>{skill}</Tag>
+                  ))
+                ) : (
+                  <span style={{ color: '#999' }}>无</span>
+                )}
               </Card>
             </Col>
             <Col span={12}>
               <Card title="缺失的必须技能">
-                {analysis.missing_required.map((skill) => (
-                  <Tag color="red" key={skill}>{skill}</Tag>
-                ))}
+                {analysis.missing_required.length > 0 ? (
+                  analysis.missing_required.map((skill) => (
+                    <Tag color="red" key={skill}>{skill}</Tag>
+                  ))
+                ) : (
+                  <span style={{ color: '#52c41a' }}>全部掌握！</span>
+                )}
               </Card>
             </Col>
           </Row>
 
-          <Card title="学习推荐" style={{ marginTop: 16 }}>
+          <Row gutter={16} style={{ marginBottom: 16 }}>
+            <Col span={12}>
+              <Card title="已掌握的加分技能">
+                {analysis.matched_preferred.length > 0 ? (
+                  analysis.matched_preferred.map((skill) => (
+                    <Tag color="green" key={skill}>{skill}</Tag>
+                  ))
+                ) : (
+                  <span style={{ color: '#999' }}>无</span>
+                )}
+              </Card>
+            </Col>
+            <Col span={12}>
+              <Card title="缺失的加分技能">
+                {analysis.missing_preferred.length > 0 ? (
+                  analysis.missing_preferred.map((skill) => (
+                    <Tag color="orange" key={skill}>{skill}</Tag>
+                  ))
+                ) : (
+                  <span style={{ color: '#52c41a' }}>全部掌握！</span>
+                )}
+              </Card>
+            </Col>
+          </Row>
+
+          <Card title="学习推荐">
             <List
               dataSource={analysis.recommendations}
               renderItem={(item) => (
@@ -113,6 +166,11 @@ export default function Gap() {
                     title={item.skill as string || '推荐'}
                     description={item.message as string || JSON.stringify(item)}
                   />
+                  {item.priority && (
+                    <Tag color={item.priority === '高' ? 'red' : item.priority === '中' ? 'orange' : 'blue'}>
+                      {item.priority as string}
+                    </Tag>
+                  )}
                 </List.Item>
               )}
             />

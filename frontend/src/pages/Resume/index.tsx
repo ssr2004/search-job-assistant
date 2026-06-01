@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Tabs, Table, Button, Upload, message, Modal, Input, Card, Space } from 'antd'
-import { UploadOutlined, PlusOutlined } from '@ant-design/icons'
+import { Tabs, Table, Button, Upload, message, Modal, Input, Card, Space, Select, Progress, Tag } from 'antd'
+import { UploadOutlined, PlusOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import type { UploadProps } from 'antd'
-import { resumeApi, jdApi, matchApi } from '@/api'
-import type { Resume, JobDescription, MatchResult } from '@/types'
+import { resumeApi, jdApi, matchApi, gapApi } from '@/api'
+import type { Resume, JobDescription, MatchResult, GapAnalysis } from '@/types'
 
 const { TextArea } = Input
 
@@ -15,6 +15,10 @@ export default function Resume() {
   const [jdModalOpen, setJdModalOpen] = useState(false)
   const [jdTitle, setJdTitle] = useState('')
   const [jdText, setJdText] = useState('')
+  const [matchModalOpen, setMatchModalOpen] = useState(false)
+  const [selectedResume, setSelectedResume] = useState<number>()
+  const [selectedJD, setSelectedJD] = useState<number>()
+  const [gapAnalysis, setGapAnalysis] = useState<GapAnalysis | null>(null)
 
   const fetchData = async () => {
     setLoading(true)
@@ -70,22 +74,42 @@ export default function Resume() {
     }
   }
 
-  const handleMatch = async (resumeId: number, jdId: number) => {
+  const handleMatch = async () => {
+    if (!selectedResume || !selectedJD) {
+      message.warning('请选择简历和 JD')
+      return
+    }
     try {
-      await matchApi.run(resumeId, jdId)
+      await matchApi.run(selectedResume, selectedJD)
       message.success('匹配完成')
+      setMatchModalOpen(false)
       fetchData()
     } catch {
       message.error('匹配失败')
     }
   }
 
+  const handleGapAnalysis = async () => {
+    if (!selectedResume || !selectedJD) {
+      message.warning('请选择简历和 JD')
+      return
+    }
+    try {
+      const res = await gapApi.analyze(selectedResume, selectedJD)
+      setGapAnalysis(res.data)
+    } catch {
+      message.error('分析失败')
+    }
+  }
+
   const resumeColumns = [
+    { title: 'ID', dataIndex: 'id', key: 'id' },
     { title: '文件名', dataIndex: 'filename', key: 'filename' },
     { title: '上传时间', dataIndex: 'created_at', key: 'created_at' },
   ]
 
   const jdColumns = [
+    { title: 'ID', dataIndex: 'id', key: 'id' },
     { title: '职位', dataIndex: 'title', key: 'title' },
     { title: '创建时间', dataIndex: 'created_at', key: 'created_at' },
   ]
@@ -97,16 +121,23 @@ export default function Resume() {
       title: '综合评分',
       dataIndex: 'final_score',
       key: 'final_score',
+      render: (score: number) => (
+        <Tag color={score >= 0.7 ? 'green' : score >= 0.4 ? 'orange' : 'red'}>
+          {(score * 100).toFixed(1)}%
+        </Tag>
+      ),
+    },
+    {
+      title: '硬性条件',
+      dataIndex: 'hard_score',
+      key: 'hard_score',
       render: (score: number) => (score * 100).toFixed(1) + '%',
     },
     {
-      title: '操作',
-      key: 'action',
-      render: (_: unknown, record: MatchResult) => (
-        <Button type="link" onClick={() => handleMatch(record.resume_id, record.jd_id)}>
-          重新匹配
-        </Button>
-      ),
+      title: '技能匹配',
+      dataIndex: 'skill_score',
+      key: 'skill_score',
+      render: (score: number) => (score * 100).toFixed(1) + '%',
     },
   ]
 
@@ -144,9 +175,59 @@ export default function Resume() {
     },
     {
       key: 'match',
-      label: '匹配结果',
+      label: '匹配分析',
       children: (
-        <Table columns={matchColumns} dataSource={matchResults} loading={loading} rowKey="id" />
+        <>
+          <Card style={{ marginBottom: 16 }}>
+            <Space>
+              <Select
+                placeholder="选择简历"
+                style={{ width: 200 }}
+                value={selectedResume}
+                onChange={setSelectedResume}
+                options={resumes.map(r => ({ value: r.id, label: r.filename }))}
+              />
+              <Select
+                placeholder="选择 JD"
+                style={{ width: 200 }}
+                value={selectedJD}
+                onChange={setSelectedJD}
+                options={jds.map(j => ({ value: j.id, label: j.title }))}
+              />
+              <Button type="primary" onClick={handleMatch}>
+                执行匹配
+              </Button>
+              <Button icon={<ThunderboltOutlined />} onClick={handleGapAnalysis}>
+                差距分析
+              </Button>
+            </Space>
+          </Card>
+
+          {gapAnalysis && (
+            <Card title="技能差距分析" style={{ marginBottom: 16 }}>
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <div>
+                  <div>必须技能匹配率</div>
+                  <Progress percent={Math.round(gapAnalysis.required_match_rate * 100)} status="active" />
+                </div>
+                <div>
+                  <div>加分技能匹配率</div>
+                  <Progress percent={Math.round(gapAnalysis.preferred_match_rate * 100)} status="active" />
+                </div>
+                <div>
+                  <div>已掌握技能：</div>
+                  {gapAnalysis.matched_required.map(s => <Tag color="green" key={s}>{s}</Tag>)}
+                </div>
+                <div>
+                  <div>缺失技能：</div>
+                  {gapAnalysis.missing_required.map(s => <Tag color="red" key={s}>{s}</Tag>)}
+                </div>
+              </Space>
+            </Card>
+          )}
+
+          <Table columns={matchColumns} dataSource={matchResults} loading={loading} rowKey="id" />
+        </>
       ),
     },
   ]
