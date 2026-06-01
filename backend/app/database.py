@@ -1,18 +1,33 @@
 import aiosqlite
-import chromadb
 from pathlib import Path
 from .config import get_settings
 
 settings = get_settings()
 
-# ChromaDB 客户端
-chroma_client = chromadb.PersistentClient(path=settings.chromadb_path)
+# ChromaDB 延迟初始化
+chroma_client = None
+knowledge_collection = None
 
-# 知识库集合
-knowledge_collection = chroma_client.get_or_create_collection(
-    name="knowledge_base",
-    metadata={"hnsw:space": "cosine"}
-)
+
+def get_chroma_client():
+    """获取 ChromaDB 客户端（延迟初始化）"""
+    global chroma_client
+    if chroma_client is None:
+        import chromadb
+        chroma_client = chromadb.PersistentClient(path=settings.chromadb_path)
+    return chroma_client
+
+
+def get_knowledge_collection():
+    """获取知识库集合（延迟初始化）"""
+    global knowledge_collection
+    if knowledge_collection is None:
+        client = get_chroma_client()
+        knowledge_collection = client.get_or_create_collection(
+            name="knowledge_base",
+            metadata={"hnsw:space": "cosine"}
+        )
+    return knowledge_collection
 
 
 async def get_sqlite() -> aiosqlite.Connection:

@@ -2,8 +2,9 @@ import json
 from ..database import get_sqlite
 from ..models.resume import (
     ResumeResponse, ResumeDetail, JDCreate, JDResponse, JDDetail,
-    MatchResult, GapAnalysisResponse
+    MatchResult
 )
+from ..models.eval import GapAnalysisResponse
 
 
 class ResumeService:
