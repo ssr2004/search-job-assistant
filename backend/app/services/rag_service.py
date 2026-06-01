@@ -6,6 +6,7 @@ from ..database import get_sqlite, get_knowledge_collection
 from ..models.knowledge import DocumentResponse, KnowledgeStats
 from ..utils.document_parser import DocumentParser
 from ..utils.embedding import encode_texts
+from ..utils.hybrid_search import HybridSearchService
 
 
 class RAGService:
@@ -13,6 +14,7 @@ class RAGService:
 
     def __init__(self):
         self.parser = DocumentParser()
+        self.search_service = HybridSearchService()
 
     async def upload_document(self, file: UploadFile, domain: str = None) -> DocumentResponse:
         """上传文档、解析分块、向量化存储"""
@@ -55,6 +57,9 @@ class RAGService:
                     metadatas=metadatas,
                 )
 
+            # 刷新搜索索引
+            self.search_service.refresh_index()
+
             return DocumentResponse(
                 id=doc_id,
                 filename=file.filename,
@@ -94,6 +99,9 @@ class RAGService:
             # 从 SQLite 删除记录
             await db.execute("DELETE FROM knowledge_documents WHERE id = ?", (doc_id,))
             await db.commit()
+
+            # 刷新搜索索引
+            self.search_service.refresh_index()
         finally:
             await db.close()
 
@@ -116,3 +124,7 @@ class RAGService:
             )
         finally:
             await db.close()
+
+    async def search(self, query: str, domain: str = None, top_k: int = 20) -> list[dict]:
+        """混合检索：向量 + BM25 + RRF 融合"""
+        return await self.search_service.search(query, domain, top_k)

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, Form
+from fastapi import APIRouter, UploadFile, File, Form, Query
 from typing import Optional
 from ..models.knowledge import DocumentResponse, KnowledgeStats
 from ..services.rag_service import RAGService
@@ -32,3 +32,13 @@ async def delete_document(doc_id: int):
 async def get_stats() -> KnowledgeStats:
     """获取知识库统计"""
     return await rag_service.get_stats()
+
+
+@router.get("/search")
+async def search(
+    query: str = Query(..., description="搜索查询"),
+    domain: Optional[str] = Query(None, description="领域过滤"),
+    top_k: int = Query(20, description="返回数量")
+) -> list[dict]:
+    """混合检索：向量 + BM25 + RRF 融合"""
+    return await rag_service.search(query, domain, top_k)
