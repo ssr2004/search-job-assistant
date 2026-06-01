@@ -1,14 +1,26 @@
 import { useState, useEffect } from 'react'
-import { Table, Button, Upload, message, Space, Card, Statistic, Row, Col } from 'antd'
-import { UploadOutlined, DeleteOutlined, FileTextOutlined } from '@ant-design/icons'
+import { Table, Button, Upload, message, Space, Card, Statistic, Row, Col, Input, List, Tag } from 'antd'
+import { UploadOutlined, DeleteOutlined, FileTextOutlined, SearchOutlined } from '@ant-design/icons'
 import type { UploadProps } from 'antd'
 import { knowledgeApi } from '@/api'
 import type { Document, KnowledgeStats } from '@/types'
+
+const { Search } = Input
+
+interface SearchResult {
+  id: string
+  content: string
+  metadata: Record<string, unknown>
+  rrf_score?: number
+  rerank_score?: number
+}
 
 export default function Knowledge() {
   const [documents, setDocuments] = useState<Document[]>([])
   const [stats, setStats] = useState<KnowledgeStats | null>(null)
   const [loading, setLoading] = useState(false)
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
+  const [searching, setSearching] = useState(false)
 
   const fetchData = async () => {
     setLoading(true)
@@ -53,6 +65,21 @@ export default function Knowledge() {
     } catch {
       message.error('删除失败')
     }
+  }
+
+  const handleSearch = async (value: string) => {
+    if (!value.trim()) {
+      setSearchResults([])
+      return
+    }
+    setSearching(true)
+    try {
+      const res = await knowledgeApi.search(value)
+      setSearchResults(res.data)
+    } catch {
+      message.error('搜索失败')
+    }
+    setSearching(false)
   }
 
   const columns = [
@@ -101,20 +128,52 @@ export default function Knowledge() {
         </Col>
       </Row>
 
-      <div style={{ marginBottom: 16 }}>
-        <Upload {...uploadProps}>
-          <Button type="primary" icon={<UploadOutlined />}>
-            上传文档
-          </Button>
-        </Upload>
-      </div>
+      <Card title="知识库检索" style={{ marginBottom: 24 }}>
+        <Search
+          placeholder="输入关键词搜索知识库..."
+          enterButton={<><SearchOutlined /> 搜索</>}
+          size="large"
+          loading={searching}
+          onSearch={handleSearch}
+        />
+        {searchResults.length > 0 && (
+          <List
+            style={{ marginTop: 16 }}
+            header={<div>找到 {searchResults.length} 条相关结果</div>}
+            dataSource={searchResults}
+            renderItem={(item) => (
+              <List.Item>
+                <List.Item.Meta
+                  title={
+                    <Space>
+                      <Tag color="blue">{(item.metadata as Record<string, unknown>)?.source as string}</Tag>
+                      {item.rerank_score && <Tag color="green">相关度: {(item.rerank_score as number).toFixed(3)}</Tag>}
+                    </Space>
+                  }
+                  description={item.content}
+                />
+              </List.Item>
+            )}
+          />
+        )}
+      </Card>
 
-      <Table
-        columns={columns}
-        dataSource={documents}
-        loading={loading}
-        rowKey="id"
-      />
+      <Card title="文档管理">
+        <div style={{ marginBottom: 16 }}>
+          <Upload {...uploadProps}>
+            <Button type="primary" icon={<UploadOutlined />}>
+              上传文档
+            </Button>
+          </Upload>
+        </div>
+
+        <Table
+          columns={columns}
+          dataSource={documents}
+          loading={loading}
+          rowKey="id"
+        />
+      </Card>
     </div>
   )
 }

@@ -28,6 +28,8 @@ export const knowledgeApi = {
   getDocuments: () => api.get('/knowledge/documents'),
   deleteDocument: (id: number) => api.delete(`/knowledge/documents/${id}`),
   getStats: () => api.get('/knowledge/stats'),
+  search: (query: string, domain?: string) =>
+    api.get('/knowledge/search', { params: { query, domain } }),
 }
 
 // 简历接口
