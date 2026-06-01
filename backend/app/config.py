@@ -3,17 +3,11 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    # LLM 配置
-    llm_provider: str = "deepseek"
+    # LLM 配置（通义千问）
+    llm_provider: str = "dashscope"
     llm_api_key: str = ""
-    llm_model: str = "deepseek-chat"
-    llm_base_url: str = "https://api.deepseek.com"
-
-    # Embedding 模型
-    embedding_model: str = "BAAI/bge-small-zh-v1.5"
-
-    # Re-ranking 模型
-    reranker_model: str = "BAAI/bge-reranker-base"
+    llm_model: str = "qwen-turbo"
+    llm_base_url: str = "https://dashscope.aliyuncs.com"
 
     # 数据库
     chromadb_path: str = "./data/chromadb"

@@ -2,9 +2,10 @@ import tempfile
 import uuid
 from pathlib import Path
 from fastapi import UploadFile
-from ..database import get_sqlite
+from ..database import get_sqlite, get_knowledge_collection
 from ..models.knowledge import DocumentResponse, KnowledgeStats
 from ..utils.document_parser import DocumentParser
+from ..utils.embedding import encode_texts
 
 
 class RAGService:
@@ -14,7 +15,7 @@ class RAGService:
         self.parser = DocumentParser()
 
     async def upload_document(self, file: UploadFile, domain: str = None) -> DocumentResponse:
-        """上传文档并解析分块"""
+        """上传文档、解析分块、向量化存储"""
         db = await get_sqlite()
         try:
             file_type = Path(file.filename).suffix.lstrip(".")
@@ -37,7 +38,22 @@ class RAGService:
             await db.commit()
             doc_id = cursor.lastrowid
 
-            # TODO: 步骤5 - 将 chunks 存入 ChromaDB
+            # 将 chunks 存入 ChromaDB
+            if chunks:
+                collection = get_knowledge_collection()
+                texts = [c["content"] for c in chunks]
+                embeddings = encode_texts(texts)
+                ids = [f"doc_{doc_id}_chunk_{i}" for i in range(len(chunks))]
+                metadatas = [
+                    {"document_id": str(doc_id), "domain": domain or "", "chunk_index": i, "source": file.filename}
+                    for i in range(len(chunks))
+                ]
+                collection.add(
+                    ids=ids,
+                    embeddings=embeddings,
+                    documents=texts,
+                    metadatas=metadatas,
+                )
 
             return DocumentResponse(
                 id=doc_id,
@@ -68,9 +84,14 @@ class RAGService:
             await db.close()
 
     async def delete_document(self, doc_id: int):
-        """删除文档 - TODO: 同时删除 ChromaDB 中的向量"""
+        """删除文档及 ChromaDB 中的向量"""
         db = await get_sqlite()
         try:
+            # 从 ChromaDB 删除该文档的所有 chunks
+            collection = get_knowledge_collection()
+            collection.delete(where={"document_id": str(doc_id)})
+
+            # 从 SQLite 删除记录
             await db.execute("DELETE FROM knowledge_documents WHERE id = ?", (doc_id,))
             await db.commit()
         finally:
