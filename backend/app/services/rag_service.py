@@ -1,34 +1,50 @@
+import tempfile
 import uuid
 from pathlib import Path
 from fastapi import UploadFile
-from ..database import get_sqlite, knowledge_collection
+from ..database import get_sqlite
 from ..models.knowledge import DocumentResponse, KnowledgeStats
+from ..utils.document_parser import DocumentParser
 
 
 class RAGService:
-    """RAG 服务 - 骨架实现"""
+    """RAG 服务"""
+
+    def __init__(self):
+        self.parser = DocumentParser()
 
     async def upload_document(self, file: UploadFile, domain: str = None) -> DocumentResponse:
-        """上传文档 - TODO: 实现文档解析和向量化"""
+        """上传文档并解析分块"""
         db = await get_sqlite()
         try:
             file_type = Path(file.filename).suffix.lstrip(".")
             content = await file.read()
 
+            # 保存临时文件并解析
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_type}") as tmp:
+                tmp.write(content)
+                tmp_path = tmp.name
+
+            chunks = self.parser.parse(tmp_path)
+            Path(tmp_path).unlink(missing_ok=True)
+
+            # 插入数据库记录
             cursor = await db.execute(
-                """INSERT INTO knowledge_documents (filename, file_type, file_size, domain, status)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (file.filename, file_type, len(content), domain, "completed")
+                """INSERT INTO knowledge_documents (filename, file_type, file_size, chunk_count, domain, status)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (file.filename, file_type, len(content), len(chunks), domain, "completed")
             )
             await db.commit()
             doc_id = cursor.lastrowid
+
+            # TODO: 步骤5 - 将 chunks 存入 ChromaDB
 
             return DocumentResponse(
                 id=doc_id,
                 filename=file.filename,
                 file_type=file_type,
                 file_size=len(content),
-                chunk_count=0,
+                chunk_count=len(chunks),
                 domain=domain,
                 status="completed",
                 created_at=""
