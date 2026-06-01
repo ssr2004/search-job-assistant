@@ -1,25 +1,39 @@
 import json
+import tempfile
+from pathlib import Path
 from ..database import get_sqlite
 from ..models.resume import (
     ResumeResponse, ResumeDetail, JDCreate, JDResponse, JDDetail,
     MatchResult
 )
 from ..models.eval import GapAnalysisResponse
+from ..utils.resume_parser import parse_resume, parse_jd
 
 
 class ResumeService:
-    """简历服务 - 骨架实现"""
+    """简历服务"""
 
     async def upload(self, file) -> ResumeResponse:
-        """上传简历 - TODO: 实现简历解析"""
+        """上传简历并解析"""
         content = await file.read()
+
+        # 保存临时文件
+        suffix = Path(file.filename).suffix
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        # 解析简历
+        parsed = await parse_resume(tmp_path)
+        Path(tmp_path).unlink(missing_ok=True)
+
         raw_text = content.decode("utf-8", errors="ignore")
 
         db = await get_sqlite()
         try:
             cursor = await db.execute(
-                "INSERT INTO resumes (filename, raw_text) VALUES (?, ?)",
-                (file.filename, raw_text)
+                "INSERT INTO resumes (filename, raw_text, parsed_content) VALUES (?, ?, ?)",
+                (file.filename, raw_text, json.dumps(parsed, ensure_ascii=False))
             )
             await db.commit()
             return ResumeResponse(id=cursor.lastrowid, filename=file.filename, created_at="")
@@ -53,12 +67,15 @@ class ResumeService:
             await db.close()
 
     async def create_jd(self, request: JDCreate) -> JDResponse:
-        """创建 JD - TODO: 实现 JD 解析"""
+        """创建 JD 并解析"""
+        # 解析 JD
+        parsed = await parse_jd(request.raw_text)
+
         db = await get_sqlite()
         try:
             cursor = await db.execute(
-                "INSERT INTO job_descriptions (title, raw_text) VALUES (?, ?)",
-                (request.title, request.raw_text)
+                "INSERT INTO job_descriptions (title, raw_text, parsed_content) VALUES (?, ?, ?)",
+                (request.title, request.raw_text, json.dumps(parsed, ensure_ascii=False))
             )
             await db.commit()
             return JDResponse(id=cursor.lastrowid, title=request.title, created_at="")
